@@ -97,11 +97,7 @@ class MusicBridge: ObservableObject {
 
         // Get the raw data from the Apple event descriptor
         let data = result.data
-        if let imageData = data {
-            return NSImage(data: imageData)
-        }
-
-        return nil
+        return NSImage(data: data)
     }
 
     // MARK: - Controls
