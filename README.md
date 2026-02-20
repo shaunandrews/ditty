@@ -28,10 +28,9 @@ Or open `Package.swift` in Xcode.
 ```
 music-controller/
 ├── Sources/MusicController/
-│   ├── App.swift              # App entry point
+│   ├── App.swift              # App entry point + floating window behavior
 │   ├── ContentView.swift      # Main player UI
-│   ├── MusicBridge.swift      # AppleScript bridge to Music.app
-│   └── WindowDelegate.swift   # Floating window behavior
+│   └── MusicBridge.swift      # AppleScript bridge to Music.app
 ├── Package.swift              # Swift Package Manager config
 ├── docs/                      # Documentation
 └── README.md
