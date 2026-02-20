@@ -12,7 +12,7 @@ install: build
 	mkdir -p "$(BUNDLE)/MacOS"
 	cp $(BUILD_DIR)/MusicController "$(BUNDLE)/MacOS/"
 	cp Info.plist "$(BUNDLE)/"
-	codesign --force --sign - "$(APP_DIR)"
+	codesign --force --sign - --entitlements entitlements.plist "$(APP_DIR)"
 	@echo "Built $(APP_DIR)"
 
 run: install

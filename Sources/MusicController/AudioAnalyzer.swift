@@ -3,6 +3,11 @@ import Accelerate
 import CoreAudio
 import AppKit
 
+/// Taps Music.app's audio output via Core Audio Process Tap API (macOS 14.2+).
+///
+/// STATUS: The tap pipeline connects successfully (process tap → aggregate device → IO proc)
+/// and the IO callback fires, but audio buffers contain silence. Suspected TCC/entitlement
+/// issue — see docs/plans/audio-tap-debugging.md for investigation notes.
 class AudioAnalyzer: ObservableObject {
     @Published var bands: [Float] = Array(repeating: 0, count: 64)
 
@@ -97,25 +102,50 @@ class AudioAnalyzer: ObservableObject {
         guard AudioHardwareCreateProcessTap(tapDesc, &newTapID) == noErr else { return false }
         tapID = newTapID
 
-        // 4. Read tap UID
-        var tapUIDProp = propertyAddress(kAudioTapPropertyUID)
-        var tapUID: CFString = "" as CFString
-        var tapUIDSize = UInt32(MemoryLayout<CFString>.stride)
-        let tapUIDResult = withUnsafeMutablePointer(to: &tapUID) { ptr in
-            AudioObjectGetPropertyData(tapID, &tapUIDProp, 0, nil, &tapUIDSize, ptr)
-        }
-        guard tapUIDResult == noErr else {
+        // 4. Get system output device UID (needed as sub-device for the aggregate)
+        var outputDeviceID = AudioObjectID(kAudioObjectUnknown)
+        var outputProp = propertyAddress(kAudioHardwarePropertyDefaultSystemOutputDevice)
+        var outputSize = UInt32(MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &outputProp, 0, nil, &outputSize, &outputDeviceID
+        ) == noErr else {
             cleanup(tap: true)
             return false
         }
 
-        // 5. Create aggregate device (empty, private)
+        var outputUIDProp = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceUID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var outputUID: CFString = "" as CFString
+        var outputUIDSize = UInt32(MemoryLayout<CFString>.stride)
+        guard withUnsafeMutablePointer(to: &outputUID, { ptr in
+            AudioObjectGetPropertyData(outputDeviceID, &outputUIDProp, 0, nil, &outputUIDSize, ptr)
+        }) == noErr else {
+            cleanup(tap: true)
+            return false
+        }
+
+        // 5. Create aggregate device with output sub-device and tap
+        let tapUUIDString = tapDesc.uuid.uuidString
         let aggDesc: [String: Any] = [
             kAudioAggregateDeviceNameKey: "MusicControllerTap",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
-            kAudioAggregateDeviceSubDeviceListKey: [] as CFArray,
+            kAudioAggregateDeviceMainSubDeviceKey: outputUID,
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceIsStackedKey: false,
+            kAudioAggregateDeviceTapAutoStartKey: true,
+            kAudioAggregateDeviceSubDeviceListKey: [
+                [kAudioSubDeviceUIDKey: outputUID]
+            ],
+            kAudioAggregateDeviceTapListKey: [
+                [
+                    kAudioSubTapDriftCompensationKey: true,
+                    kAudioSubTapUIDKey: tapUUIDString,
+                ]
+            ],
         ]
         var newDeviceID = AudioObjectID(kAudioObjectUnknown)
         guard AudioHardwareCreateAggregateDevice(aggDesc as CFDictionary, &newDeviceID) == noErr else {
@@ -124,25 +154,13 @@ class AudioAnalyzer: ObservableObject {
         }
         aggregateDeviceID = newDeviceID
 
-        // 6. Attach tap to aggregate device
-        var tapListProp = propertyAddress(kAudioAggregateDevicePropertyTapList)
-        let tapArray = [tapUID] as CFArray
-        let tapListSize = UInt32(MemoryLayout<CFArray>.stride)
-        let attachResult = withUnsafePointer(to: tapArray) { ptr in
-            AudioObjectSetPropertyData(aggregateDeviceID, &tapListProp, 0, nil, tapListSize, ptr)
-        }
-        guard attachResult == noErr else {
-            cleanup(tap: true, device: true)
-            return false
-        }
-
-        // 7. Wait for device readiness
+        // 6. Wait for device readiness
         for _ in 0..<20 {
             if isDeviceAlive(aggregateDeviceID) { break }
             Thread.sleep(forTimeInterval: 0.1)
         }
 
-        // 8. Read stream format (retry a few times — device may need a moment)
+        // 7. Read stream format (retry a few times — device may need a moment)
         var formatProp = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyStreamFormat,
             mScope: kAudioDevicePropertyScopeInput,
@@ -162,12 +180,12 @@ class AudioAnalyzer: ObservableObject {
             Thread.sleep(forTimeInterval: 0.05)
         }
 
-        guard gotFormat, let avFormat = AVAudioFormat(streamDescription: &streamDesc) else {
+        guard gotFormat, let _ = AVAudioFormat(streamDescription: &streamDesc) else {
             cleanup(tap: true, device: true)
             return false
         }
 
-        // 9. Create IO proc
+        // 8. Create IO proc
         let ioQueue = DispatchQueue(label: "com.shaun.MusicController.audio-io", qos: .userInteractive)
         var newProcID: AudioDeviceIOProcID?
 
@@ -178,25 +196,29 @@ class AudioAnalyzer: ObservableObject {
         ) { [weak self] _, inInputData, _, _, _ in
             guard let self else { return }
 
-            guard let buffer = AVAudioPCMBuffer(
-                pcmFormat: avFormat,
-                bufferListNoCopy: inInputData,
-                deallocator: nil
-            ), let channelData = buffer.floatChannelData?[0],
-               buffer.frameLength > 0 else { return }
+            let bufferList = inInputData.pointee
+            let buf = bufferList.mBuffers
+            guard let data = buf.mData, buf.mDataByteSize > 0 else { return }
 
-            let frameCount = Int(buffer.frameLength)
-            let samples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
+            let floatPtr = data.assumingMemoryBound(to: Float.self)
+            let totalFloats = Int(buf.mDataByteSize) / MemoryLayout<Float>.size
+            let channelCount = max(1, Int(buf.mNumberChannels))
+            let frameCount = totalFloats / channelCount
+
+            // Extract left channel (stride by channelCount for interleaved)
+            var samples = [Float](repeating: 0, count: frameCount)
+            for i in 0..<frameCount {
+                samples[i] = floatPtr[i * channelCount]
+            }
             let newBands = Self.fftBands(from: samples)
 
             DispatchQueue.main.async {
                 for i in 0..<self.bands.count {
                     let target = i < newBands.count ? newBands[i] : 0
-                    let boosted = min(1.0, target * 1.5)
-                    if boosted > self.bands[i] {
-                        self.bands[i] = self.bands[i] * 0.1 + boosted * 0.9
+                    if target > self.bands[i] {
+                        self.bands[i] = self.bands[i] * 0.1 + target * 0.9
                     } else {
-                        self.bands[i] = self.bands[i] * 0.75 + boosted * 0.25
+                        self.bands[i] = self.bands[i] * 0.75 + target * 0.25
                     }
                 }
             }
@@ -208,7 +230,7 @@ class AudioAnalyzer: ObservableObject {
         }
         ioProcID = newProcID
 
-        // 10. Start
+        // 9. Start
         guard AudioDeviceStart(aggregateDeviceID, newProcID) == noErr else {
             cleanup(tap: true, device: true, ioProc: true)
             return false
@@ -302,11 +324,22 @@ class AudioAnalyzer: ObservableObject {
 
         var magnitudes = real
 
-        // To dB, normalize -60..0 → 0..1
+        // To dB (power → dB with ref=1)
         var ref: Float = 1
         vDSP_vdbcon(magnitudes, 1, &ref, &magnitudes, 1, vDSP_Length(halfN), 0)
+
+        // Frequency weighting — music is naturally bass-heavy, so attenuate
+        // low bins to keep the visualizer dynamic across the full spectrum.
+        // Gentle sqrt curve: lowest bin → 0.25x, highest → 1.0x
         for i in 0..<halfN {
-            magnitudes[i] = max(0, (magnitudes[i] + 60) / 60)
+            let t = Float(i + 1) / Float(halfN)
+            magnitudes[i] *= (0.25 + 0.75 * sqrt(t))
+        }
+
+        // Normalize: process tap delivers full-scale digital audio,
+        // so dB range is roughly 10..60 rather than the -60..0 a mic sees
+        for i in 0..<halfN {
+            magnitudes[i] = max(0, min(1, (magnitudes[i] - 10) / 50))
         }
 
         // Squared frequency mapping — each band gets unique bins
