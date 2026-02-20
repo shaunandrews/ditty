@@ -4,10 +4,7 @@ import CoreAudio
 import AppKit
 
 /// Taps Music.app's audio output via Core Audio Process Tap API (macOS 14.2+).
-///
-/// STATUS: The tap pipeline connects successfully (process tap → aggregate device → IO proc)
-/// and the IO callback fires, but audio buffers contain silence. Suspected TCC/entitlement
-/// issue — see docs/plans/audio-tap-debugging.md for investigation notes.
+/// Uses a tap-only aggregate device (no sub-devices) and reads format from the tap itself.
 class AudioAnalyzer: ObservableObject {
     @Published var bands: [Float] = Array(repeating: 0, count: 64)
 
@@ -15,6 +12,7 @@ class AudioAnalyzer: ObservableObject {
     private var aggregateDeviceID = AudioObjectID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
     private var retryTimer: Timer?
+    private var recentPeak: Float = 0.001
 
     func start() {
         guard ioProcID == nil else { return }
@@ -102,44 +100,14 @@ class AudioAnalyzer: ObservableObject {
         guard AudioHardwareCreateProcessTap(tapDesc, &newTapID) == noErr else { return false }
         tapID = newTapID
 
-        // 4. Get system output device UID (needed as sub-device for the aggregate)
-        var outputDeviceID = AudioObjectID(kAudioObjectUnknown)
-        var outputProp = propertyAddress(kAudioHardwarePropertyDefaultSystemOutputDevice)
-        var outputSize = UInt32(MemoryLayout<AudioObjectID>.size)
-        guard AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &outputProp, 0, nil, &outputSize, &outputDeviceID
-        ) == noErr else {
-            cleanup(tap: true)
-            return false
-        }
-
-        var outputUIDProp = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyDeviceUID,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var outputUID: CFString = "" as CFString
-        var outputUIDSize = UInt32(MemoryLayout<CFString>.stride)
-        guard withUnsafeMutablePointer(to: &outputUID, { ptr in
-            AudioObjectGetPropertyData(outputDeviceID, &outputUIDProp, 0, nil, &outputUIDSize, ptr)
-        }) == noErr else {
-            cleanup(tap: true)
-            return false
-        }
-
-        // 5. Create aggregate device with output sub-device and tap
+        // 4. Create aggregate device with tap (no sub-devices)
         let tapUUIDString = tapDesc.uuid.uuidString
         let aggDesc: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "MusicControllerTap",
+            kAudioAggregateDeviceNameKey: "DittyTap",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
-            kAudioAggregateDeviceMainSubDeviceKey: outputUID,
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceIsStackedKey: false,
             kAudioAggregateDeviceTapAutoStartKey: true,
-            kAudioAggregateDeviceSubDeviceListKey: [
-                [kAudioSubDeviceUIDKey: outputUID]
-            ],
             kAudioAggregateDeviceTapListKey: [
                 [
                     kAudioSubTapDriftCompensationKey: true,
@@ -154,16 +122,16 @@ class AudioAnalyzer: ObservableObject {
         }
         aggregateDeviceID = newDeviceID
 
-        // 6. Wait for device readiness
+        // 5. Wait for device readiness
         for _ in 0..<20 {
             if isDeviceAlive(aggregateDeviceID) { break }
             Thread.sleep(forTimeInterval: 0.1)
         }
 
-        // 7. Read stream format (retry a few times — device may need a moment)
+        // 6. Read tap format
         var formatProp = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyStreamFormat,
-            mScope: kAudioDevicePropertyScopeInput,
+            mSelector: kAudioTapPropertyFormat,
+            mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
         var streamDesc = AudioStreamBasicDescription()
@@ -172,7 +140,7 @@ class AudioAnalyzer: ObservableObject {
         var gotFormat = false
         for _ in 0..<5 {
             if AudioObjectGetPropertyData(
-                aggregateDeviceID, &formatProp, 0, nil, &formatSize, &streamDesc
+                tapID, &formatProp, 0, nil, &formatSize, &streamDesc
             ) == noErr, streamDesc.mSampleRate > 0 {
                 gotFormat = true
                 break
@@ -185,8 +153,8 @@ class AudioAnalyzer: ObservableObject {
             return false
         }
 
-        // 8. Create IO proc
-        let ioQueue = DispatchQueue(label: "com.shaun.MusicController.audio-io", qos: .userInteractive)
+        // 7. Create IO proc
+        let ioQueue = DispatchQueue(label: "com.shaun.Ditty.audio-io", qos: .userInteractive)
         var newProcID: AudioDeviceIOProcID?
 
         let ioResult = AudioDeviceCreateIOProcIDWithBlock(
@@ -210,15 +178,18 @@ class AudioAnalyzer: ObservableObject {
             for i in 0..<frameCount {
                 samples[i] = floatPtr[i * channelCount]
             }
-            let newBands = Self.fftBands(from: samples)
+
+            let newBands = Self.fftBands(from: samples, peak: &self.recentPeak)
 
             DispatchQueue.main.async {
                 for i in 0..<self.bands.count {
                     let target = i < newBands.count ? newBands[i] : 0
                     if target > self.bands[i] {
-                        self.bands[i] = self.bands[i] * 0.1 + target * 0.9
+                        // Instant attack — snap to peaks
+                        self.bands[i] = target
                     } else {
-                        self.bands[i] = self.bands[i] * 0.75 + target * 0.25
+                        // Quick decay — keeps things lively
+                        self.bands[i] = self.bands[i] * 0.7 + target * 0.3
                     }
                 }
             }
@@ -230,7 +201,7 @@ class AudioAnalyzer: ObservableObject {
         }
         ioProcID = newProcID
 
-        // 9. Start
+        // 8. Start
         guard AudioDeviceStart(aggregateDeviceID, newProcID) == noErr else {
             cleanup(tap: true, device: true, ioProc: true)
             return false
@@ -282,7 +253,7 @@ class AudioAnalyzer: ObservableObject {
 
     // MARK: - FFT
 
-    static func fftBands(from samples: [Float]) -> [Float] {
+    static func fftBands(from samples: [Float], peak: inout Float) -> [Float] {
         let bandCount = 64
         let n = 4096
         let halfN = n / 2
@@ -322,37 +293,56 @@ class AudioAnalyzer: ObservableObject {
             }
         }
 
-        var magnitudes = real
+        // Square root to get amplitude (not power) — less spiky, more musical
+        var magnitudes = [Float](repeating: 0, count: halfN)
+        var sqrtCount = Int32(halfN)
+        vvsqrtf(&magnitudes, real, &sqrtCount)
 
-        // To dB (power → dB with ref=1)
-        var ref: Float = 1
-        vDSP_vdbcon(magnitudes, 1, &ref, &magnitudes, 1, vDSP_Length(halfN), 0)
+        // Log-frequency band mapping (perceptual, not squared)
+        // Maps ~20Hz–20kHz across 64 bands using log scale
+        let minFreq: Float = 30
+        let maxFreq: Float = min(20000, Float(48000) / 2)
+        let logMin = log2(minFreq)
+        let logMax = log2(maxFreq)
+        let binHz = Float(48000) / Float(n)
 
-        // Frequency weighting — music is naturally bass-heavy, so attenuate
-        // low bins to keep the visualizer dynamic across the full spectrum.
-        // Gentle sqrt curve: lowest bin → 0.25x, highest → 1.0x
-        for i in 0..<halfN {
-            let t = Float(i + 1) / Float(halfN)
-            magnitudes[i] *= (0.25 + 0.75 * sqrt(t))
-        }
-
-        // Normalize: process tap delivers full-scale digital audio,
-        // so dB range is roughly 10..60 rather than the -60..0 a mic sees
-        for i in 0..<halfN {
-            magnitudes[i] = max(0, min(1, (magnitudes[i] - 10) / 50))
-        }
-
-        // Squared frequency mapping — each band gets unique bins
         var bands = [Float](repeating: 0, count: bandCount)
         for i in 0..<bandCount {
-            let t0 = Float(i) / Float(bandCount)
-            let t1 = Float(i + 1) / Float(bandCount)
-            let lo = max(1, Int(t0 * t0 * Float(halfN)))
-            let hi = max(lo + 1, min(halfN, Int(t1 * t1 * Float(halfN))))
+            let f0 = pow(2, logMin + (logMax - logMin) * Float(i) / Float(bandCount))
+            let f1 = pow(2, logMin + (logMax - logMin) * Float(i + 1) / Float(bandCount))
+            let lo = max(1, Int(f0 / binHz))
+            let hi = max(lo + 1, min(halfN, Int(f1 / binHz)))
 
-            var sum: Float = 0
-            for j in lo..<hi { sum += magnitudes[j] }
-            bands[i] = sum / Float(hi - lo)
+            // Use peak (max) of bin range, not average — more reactive
+            var bandMax: Float = 0
+            for j in lo..<hi {
+                bandMax = max(bandMax, magnitudes[j])
+            }
+            bands[i] = bandMax
+        }
+
+        // Adaptive normalization: track recent peak, normalize against it
+        var currentMax: Float = 0
+        vDSP_maxv(bands, 1, &currentMax, vDSP_Length(bandCount))
+
+        // Slowly chase the peak — rises fast, decays slowly
+        if currentMax > peak {
+            peak = peak * 0.3 + currentMax * 0.7
+        } else {
+            peak = peak * 0.995 + currentMax * 0.005
+        }
+        let normFactor = 1.0 / max(peak, 0.0001)
+
+        for i in 0..<bandCount {
+            // Normalize against adaptive peak
+            var val = bands[i] * normFactor
+            // Boost higher bands — high frequencies have less energy naturally
+            let t = Float(i) / Float(bandCount - 1)
+            let boost: Float = 1.0 + t * 2.5  // 1x at low end, 3.5x at high end
+            val *= boost
+            // Power curve to boost detail
+            val = pow(val, 0.7)
+            bands[i] = min(1, val)
         }
 
         return bands

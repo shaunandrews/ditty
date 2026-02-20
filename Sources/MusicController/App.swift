@@ -7,7 +7,7 @@ class FloatingWindow: NSWindow {
 }
 
 @main
-struct MusicControllerApp {
+struct DittyApp {
     static func main() {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
@@ -64,11 +64,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "About Music Controller",
+        appMenu.addItem(withTitle: "About Ditty",
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                         keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit Music Controller",
+        appMenu.addItem(withTitle: "Quit Ditty",
                         action: #selector(NSApplication.terminate(_:)),
                         keyEquivalent: "q")
         appMenuItem.submenu = appMenu

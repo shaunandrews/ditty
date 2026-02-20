@@ -1,4 +1,4 @@
-APP_NAME = Music Controller
+APP_NAME = Ditty
 APP_DIR = $(APP_NAME).app
 BUNDLE = $(APP_DIR)/Contents
 BUILD_DIR = .build/release
@@ -12,7 +12,7 @@ install: build
 	mkdir -p "$(BUNDLE)/MacOS"
 	cp $(BUILD_DIR)/MusicController "$(BUNDLE)/MacOS/"
 	cp Info.plist "$(BUNDLE)/"
-	codesign --force --sign - --entitlements entitlements.plist "$(APP_DIR)"
+	codesign --force --sign "DittyDev" --entitlements entitlements.plist "$(APP_DIR)"
 	@echo "Built $(APP_DIR)"
 
 run: install

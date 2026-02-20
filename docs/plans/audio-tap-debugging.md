@@ -1,51 +1,47 @@
 # Audio Tap Debugging Notes
 
+**STATUS: RESOLVED** — See solution below. Full session log at `logs/02-20-2026-1300.md`.
+
 ## Problem
 
 The Core Audio Process Tap connects to Music.app successfully — tap creation, aggregate device, IO proc all return `noErr` — but audio buffers contain all zeros (silence). The IO callback fires at ~100Hz with 512 stereo frames per callback, but RMS is always 0.0.
 
-## What Works
+## Solution
 
-- `AudioHardwareCreateProcessTap` succeeds, returns valid tap ID
-- `AudioHardwareCreateAggregateDevice` succeeds with output sub-device + tap
-- `AudioDeviceCreateIOProcIDWithBlock` succeeds
-- `AudioDeviceStart` succeeds
-- IO callback fires consistently with valid buffer pointers and sizes
-- Format reads correctly: 48000Hz, 2ch, 32bit, Float32, interleaved
+The silence had **two root causes** working together:
 
-## What We Verified
+### 1. App must be launched via `open` (LaunchServices), not by running the binary directly
 
-- Raw hex bytes of both INPUT and OUTPUT buffers: all `00`
-- RMS at callbacks #10, #50, #200: always 0.0
-- Ran from app bundle binary (not bare `swift run`) for correct TCC context
-- Music.app confirmed playing audio
-- Tried both aggregate device approaches:
-  - AudioTee style: empty aggregate device, tap attached via `kAudioAggregateDevicePropertyTapList` property → silence
-  - AudioCap style: output device as sub-device + tap in creation dictionary → silence
+TCC for Screen & System Audio Recording only grants permission when the app is launched through LaunchServices (`open Ditty.app` or `make run`). Running the binary directly (`./Ditty.app/Contents/MacOS/MusicController`) causes TCC to silently deliver zero-filled buffers — no errors, no feedback.
 
-## Fixes Applied (Not Sufficient)
+### 2. Ad-hoc code signing invalidated TCC grants
 
-- Added `entitlements.plist` with `com.apple.security.device.audio-input`
-- Updated Makefile to codesign with `--entitlements entitlements.plist`
-- Reset TCC with `tccutil reset AudioCapture`
-- User approved fresh permission dialog
+`codesign --sign -` produces a different signature every rebuild. TCC caches grants by signature, so each rebuild silently invalidated the previous grant. Fixed by creating a stable `DittyDev` self-signed certificate.
 
-## Remaining Theories
+### Additional fixes applied (correctness, not root cause)
 
-1. **TCC still not granting real access** — ad-hoc codesigning (`--sign -`) may produce different signatures each rebuild, invalidating TCC grants. May need a stable Developer ID or self-signed certificate.
+- Removed output sub-device from aggregate (tap-only, SoundPusher pattern)
+- Read format from `kAudioTapPropertyFormat` on tap ID instead of aggregate device
+- Rewrote FFT visualization with adaptive normalization for tap signal levels
 
-2. **Aggregate device sub-device config** — SoundPusher's author found that including the output device as a sub-device "confused matters". Try creating aggregate with ONLY the tap (no sub-device list, no main sub-device key).
+## What Was Ruled Out
 
-3. **Tap format mismatch** — AudioCap reads format from `kAudioTapPropertyFormat` on the tap ID, not `kAudioDevicePropertyStreamFormat` on the aggregate device. The IO proc might need the tap's native format for `AVAudioPCMBuffer` wrapping.
+- **DRM** — Apple Music streaming content works fine with process taps
+- **AudioTee two-step approach** — Creating empty aggregate then adding tap via property fails with `AudioDeviceStart` error 1852797029
+- **Entitlements** — `com.apple.security.device.audio-input` is necessary but not sufficient alone
+- **Sub-device config** — Both with and without sub-devices produce callbacks; the silence was TCC, not routing
 
-4. **AVAudioEngine approach** — Instead of raw IO proc, set the aggregate device as `AVAudioEngine.inputNode`'s device via `kAudioOutputUnitProperty_CurrentDevice`, then use `installTap(onBus:)`. This is closer to the original mic code and may handle routing differently.
+## Key TCC Facts
 
-5. **Music.app DRM** — Apple Music streaming content may have DRM that prevents process taps from capturing audio. If so, only locally-owned tracks would produce non-zero buffers. Test with a local MP3/AAC file imported into Music.app.
+- `tccutil reset ScreenCapture` is the correct service (NOT `AudioCapture`)
+- The `[aud]` indicator in ControlCenter appears even when TCC is silently denying access
+- Enabling Ditty in System Settings > Privacy > Screen & System Audio Recording is required
+- Permission only works when launched via LaunchServices (`open`), not direct binary execution
 
 ## Reference Implementations
 
 - [AudioCap](https://github.com/insidegui/AudioCap) — BSD-2, most complete Swift reference
 - [AudioTee](https://github.com/makeusabrew/audiotee) — modular CLI tool
-- [SoundPusher](https://github.com/q-p/SoundPusher) — C++, tap-only aggregate device (no sub-devices)
+- [SoundPusher](https://codeberg.org/q-p/SoundPusher) — C++, tap-only aggregate device (no sub-devices)
 - [audiograb](https://github.com/obsfx/audiograb) — simple CLI recorder with entitlements
 - [Core Audio Taps for Dummies](https://www.maven.de/2025/04/coreaudio-taps-for-dummies/) — best writeup of TCC/permission gotchas

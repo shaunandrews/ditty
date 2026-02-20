@@ -1,8 +1,8 @@
-# Music Controller — Overview
+# Ditty — Overview
 
 ## What Is This?
 
-A minimal macOS app that shows what's currently playing in Apple Music with basic controls. Born out of frustration with Apple Music's cluttered UI — sometimes you just want to see the song, the artist, and the album art without wading through a full media player.
+A minimal macOS app that shows what's currently playing in Apple Music with basic controls and a real-time audio visualizer. Born out of frustration with Apple Music's cluttered UI — sometimes you just want to see the song, the artist, and the album art without wading through a full media player.
 
 Built with SwiftUI and communicates with Music.app via AppleScript. Supports floating above other windows so it's always visible while you work.
 
@@ -12,6 +12,7 @@ Built with SwiftUI and communicates with Music.app via AppleScript. Supports flo
 - **SwiftUI** for the UI
 - **AppleScript** via `NSAppleScript` for Music.app communication
 - **NSPanel** subclass for always-on-top floating behavior
+- **Core Audio Process Tap** for real-time audio visualization (macOS 14.2+)
 - Polls every ~1 second for track changes (Apple Music has no change notification API)
 
 ## Key People
@@ -20,6 +21,6 @@ Built with SwiftUI and communicates with Music.app via AppleScript. Supports flo
 
 ## What's Next
 
-- Build the initial working prototype
-- Nail the UI — clean, readable, beautiful
+- Polish the UI — clean, readable, beautiful
 - Test floating window behavior across Spaces/fullscreen apps
+- Refine visualizer tuning

@@ -4,17 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A minimal floating Apple Music controller for macOS built with SwiftUI. Displays current track info and basic playback controls.
+Ditty — a minimal floating Apple Music controller for macOS built with SwiftUI. Displays current track info, basic playback controls, and a real-time audio visualizer.
 
 ## Development
 
 ```bash
 swift build        # Build
-swift run          # Run
+make run           # Build, codesign, and launch as Ditty.app
 open Package.swift # Open in Xcode
 ```
 
-No tests currently. macOS 14+ (Sonoma) required. The app will prompt for Automation permission on first launch to control Music.app, and System Audio Recording permission for the visualizer.
+No tests currently. macOS 14.2+ required. The app needs Automation permission to control Music.app, and Screen & System Audio Recording permission for the visualizer. The app **must** be launched via `open Ditty.app` (or `make run`), not by running the binary directly — TCC silently denies audio capture to bare binaries.
+
+Code signing uses a local `DittyDev` self-signed certificate. Create it once via Keychain Access or openssl (see `docs/plans/2026-02-20-audio-tap-fix-design.md`).
 
 ## Architecture
 
@@ -27,7 +29,7 @@ No tests currently. macOS 14+ (Sonoma) required. The app will prompt for Automat
 
 - `Sources/MusicController/MusicBridge.swift` — All AppleScript interaction. Uses `||`-delimited string responses parsed into `TrackInfo`. Artwork fetched separately as raw data.
 - `Sources/MusicController/ContentView.swift` — The player UI. Owns the `MusicBridge` instance as `@StateObject`. Handles float/pin toggle.
-- `Sources/MusicController/AudioAnalyzer.swift` — Core Audio Process Tap for real-time audio visualization. Taps Music.app's audio output directly (no microphone). Uses `CATapDescription` + aggregate device + IO proc callback, feeding PCM buffers through vDSP FFT.
+- `Sources/MusicController/AudioAnalyzer.swift` — Core Audio Process Tap for real-time audio visualization. Taps Music.app's audio output directly (no microphone). Uses `CATapDescription` + tap-only aggregate device (no sub-devices) + IO proc callback. Reads format from `kAudioTapPropertyFormat`. FFT via vDSP with log-frequency band mapping, adaptive normalization, and high-frequency boost.
 - `Sources/MusicController/App.swift` — App entry point and `AppDelegate` for floating window setup.
 
 ## Scope
