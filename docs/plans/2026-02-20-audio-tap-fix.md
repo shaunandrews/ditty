@@ -112,7 +112,7 @@ Changes: `CFBundleIdentifier` → `com.shaun.Ditty`, `CFBundleName` → `Ditty`,
 ### Task 4: Update App.swift — Rename menu items
 
 **Files:**
-- Modify: `Sources/MusicController/App.swift:10,67,71`
+- Modify: `Sources/Ditty/App.swift:10,67,71`
 
 **Step 1: Rename struct and menu strings**
 
@@ -127,7 +127,7 @@ Line 71: `"Quit Music Controller"` → `"Quit Ditty"`
 This is the core audio fix. Remove the output device lookup and create a tap-only aggregate.
 
 **Files:**
-- Modify: `Sources/MusicController/AudioAnalyzer.swift:105-149`
+- Modify: `Sources/Ditty/AudioAnalyzer.swift:105-149`
 
 **Step 1: Delete the output device UID lookup (lines 105-129)**
 
@@ -162,7 +162,7 @@ No `kAudioAggregateDeviceMainSubDeviceKey`. No `kAudioAggregateDeviceSubDeviceLi
 ### Task 6: Fix Format Source — Read from Tap
 
 **Files:**
-- Modify: `Sources/MusicController/AudioAnalyzer.swift` (the format-reading section, currently lines 163-186)
+- Modify: `Sources/Ditty/AudioAnalyzer.swift` (the format-reading section, currently lines 163-186)
 
 **Step 1: Replace format read**
 
@@ -202,7 +202,7 @@ Key changes: `kAudioTapPropertyFormat` instead of `kAudioDevicePropertyStreamFor
 ### Task 7: Add Diagnostics
 
 **Files:**
-- Modify: `Sources/MusicController/AudioAnalyzer.swift`
+- Modify: `Sources/Ditty/AudioAnalyzer.swift`
 
 **Step 1: Add import and callback counter**
 
@@ -256,7 +256,7 @@ Line 189: `"com.shaun.MusicController.audio-io"` → `"com.shaun.Ditty.audio-io"
 ### Task 8: Update Doc Comment
 
 **Files:**
-- Modify: `Sources/MusicController/AudioAnalyzer.swift:6-10`
+- Modify: `Sources/Ditty/AudioAnalyzer.swift:6-10`
 
 **Step 1: Update the class doc comment**
 
@@ -309,8 +309,8 @@ Look for log output:
 
 ```bash
 git add Makefile Info.plist entitlements.plist \
-  Sources/MusicController/AudioAnalyzer.swift \
-  Sources/MusicController/App.swift \
+  Sources/Ditty/AudioAnalyzer.swift \
+  Sources/Ditty/App.swift \
   docs/plans/2026-02-20-audio-tap-fix-design.md \
   docs/plans/2026-02-20-audio-tap-fix.md
 git commit -m "Fix silent audio tap: stable signing, tap-only aggregate, tap format

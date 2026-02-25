@@ -145,7 +145,7 @@ class MusicBridge: ObservableObject {
     }
 
     private func fetchArtworkViaAppleScript() -> NSImage? {
-        let tmpPath = NSTemporaryDirectory() + "music_controller_artwork.dat"
+        let tmpPath = NSTemporaryDirectory() + "ditty_artwork.dat"
         let script = """
         tell application "Music"
             if player state is not stopped then

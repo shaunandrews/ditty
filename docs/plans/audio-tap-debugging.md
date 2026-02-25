@@ -12,7 +12,7 @@ The silence had **two root causes** working together:
 
 ### 1. App must be launched via `open` (LaunchServices), not by running the binary directly
 
-TCC for Screen & System Audio Recording only grants permission when the app is launched through LaunchServices (`open Ditty.app` or `make run`). Running the binary directly (`./Ditty.app/Contents/MacOS/MusicController`) causes TCC to silently deliver zero-filled buffers — no errors, no feedback.
+TCC for Screen & System Audio Recording only grants permission when the app is launched through LaunchServices (`open Ditty.app` or `make run`). Running the binary directly (`./Ditty.app/Contents/MacOS/Ditty`) causes TCC to silently deliver zero-filled buffers — no errors, no feedback.
 
 ### 2. Ad-hoc code signing invalidated TCC grants
 
