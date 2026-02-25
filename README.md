@@ -4,6 +4,12 @@ A minimal, floating Apple Music controller for macOS. Shows what's playing witho
 
 ![macOS](https://img.shields.io/badge/macOS-14.2%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
+<p align="center">
+  <img src="screenshots/coldplay.png" width="220" alt="Ditty playing Coldplay">
+  <img src="screenshots/wilco.png" width="220" alt="Ditty playing Wilco">
+  <img src="screenshots/yellowcard.png" width="220" alt="Ditty playing Yellowcard">
+</p>
+
 ## What It Does
 
 Ditty floats a small player on your desktop showing the current track — song title, artist, album artwork — with play/pause and skip controls. It talks to Music.app via AppleScript and taps its audio output for a real-time visualizer. No private APIs, no MusicKit.
