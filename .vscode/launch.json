@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:music-controller}",
+            "name": "Debug MusicController",
+            "target": "MusicController",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug MusicController"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:music-controller}",
+            "name": "Release MusicController",
+            "target": "MusicController",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release MusicController"
+        }
+    ]
+}

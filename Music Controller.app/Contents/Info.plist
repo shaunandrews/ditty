@@ -5,20 +5,18 @@
     <key>CFBundleExecutable</key>
     <string>MusicController</string>
     <key>CFBundleIdentifier</key>
-    <string>com.shaun.Ditty</string>
+    <string>com.shaun.MusicController</string>
     <key>CFBundleName</key>
-    <string>Ditty</string>
+    <string>Music Controller</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
-    <key>CFBundleIconName</key>
-    <string>AppIcon</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.2</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Ditty needs to communicate with Music.app to display track information and control playback.</string>
+    <string>Music Controller needs to communicate with Music.app to display track information and control playback.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>Ditty captures audio from Music.app to display a real-time visualizer.</string>
+    <string>Music Controller captures audio from Music.app to display a real-time visualizer.</string>
 </dict>
 </plist>

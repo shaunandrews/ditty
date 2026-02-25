@@ -5,6 +5,20 @@ import SwiftUI
 struct AudioVisualizerView: View {
     let bands: [Float]
     let artwork: NSImage?
+    var height: CGFloat = 36
+    @ObservedObject private var settings = VisualizerSettings.shared
+
+    private var displayBands: [Float] {
+        settings.displayBands(from: bands)
+    }
+
+    private var alignment: Alignment {
+        switch settings.growthDirection {
+        case .center: return .center
+        case .bottom: return .bottom
+        case .top: return .top
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -13,31 +27,31 @@ struct AudioVisualizerView: View {
                 Image(nsImage: artwork)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .frame(height: 36)
+                    .frame(height: height)
                     .clipped()
+                    .blur(radius: settings.barBlur)
                     .mask {
                         barMask
                     }
-                    .shadow(color: .white.opacity(0.15), radius: 6)
             } else {
                 // No artwork — faint white bars
                 barMask
-                    .foregroundStyle(.white.opacity(0.3))
+                    .foregroundStyle(.white.opacity(0.4))
             }
         }
-        .frame(height: 36)
-        .animation(.linear(duration: 0.06), value: bands.map { $0 })
+        .frame(height: height)
+        .animation(.linear(duration: 0.06), value: displayBands.map { $0 })
     }
 
     private var barMask: some View {
-        HStack(spacing: 1) {
-            ForEach(Array(bands.enumerated()), id: \.offset) { _, level in
-                RoundedRectangle(cornerRadius: 1)
+        HStack(spacing: settings.barSpacing) {
+            ForEach(Array(displayBands.enumerated()), id: \.offset) { _, level in
+                RoundedRectangle(cornerRadius: settings.barCornerRadius)
                     .frame(maxWidth: .infinity)
-                    .frame(height: max(1, CGFloat(level) * 36))
+                    .frame(height: max(2, CGFloat(level) * height))
             }
         }
-        .frame(height: 36)
+        .frame(height: height, alignment: alignment)
     }
 }
 
@@ -46,6 +60,7 @@ struct AudioVisualizerView: View {
 struct ContentView: View {
     @StateObject private var bridge = MusicBridge()
     @StateObject private var audio = AudioAnalyzer()
+    @ObservedObject private var settings = VisualizerSettings.shared
     @State private var isFloating = true
     @State private var isHovering = false
     @State private var pulseBackground = false
@@ -73,14 +88,21 @@ struct ContentView: View {
         }
         .background {
             if let artwork = bridge.track?.artwork {
+                let spread = settings.windowBgScale * 0.15
                 Image(nsImage: artwork)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .blur(radius: 25)
-                    .scaleEffect(pulseBackground ? 1.8 : 1.4)
+                    .blur(radius: settings.windowBgBlur)
+                    .scaleEffect(pulseBackground
+                        ? settings.windowBgScale + spread
+                        : settings.windowBgScale - spread)
                     .rotationEffect(.degrees(pulseBackground ? 4 : -4))
-                    .opacity(0.85)
-                    .animation(.easeInOut(duration: 6).repeatForever(autoreverses: true), value: pulseBackground)
+                    .opacity(settings.windowBgOpacity)
+                    .animation(
+                        .easeInOut(duration: settings.windowBgPulseSpeed)
+                            .repeatForever(autoreverses: true),
+                        value: pulseBackground
+                    )
                     .onAppear { pulseBackground = true }
             }
         }
@@ -97,38 +119,60 @@ struct ContentView: View {
     private func playerView(track: TrackInfo, compact: Bool) -> some View {
         VStack(spacing: 0) {
             if !compact {
-                // Album Art — fills width, square
-                ZStack(alignment: .topTrailing) {
-                    if let artwork = track.artwork {
-                        Image(nsImage: artwork)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .aspectRatio(1, contentMode: .fit)
-                            .clipped()
-                    } else {
-                        Rectangle()
-                            .fill(.quaternary)
-                            .aspectRatio(1, contentMode: .fit)
-                            .overlay {
-                                Image(systemName: "music.note")
-                                    .font(.system(size: 40))
-                                    .foregroundStyle(secondaryColor)
-                            }
-                    }
+                // Album Art with visualizer overlay
+                GeometryReader { artGeo in
+                    ZStack(alignment: .bottom) {
+                        // Dimmed artwork background
+                        if let artwork = track.artwork {
+                            Image(nsImage: artwork)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: artGeo.size.width, height: artGeo.size.width)
+                                .clipped()
+                                .blur(radius: settings.backgroundBlur)
+                                .brightness(-settings.artworkDim)
+                        } else {
+                            Rectangle()
+                                .fill(.quaternary)
+                                .overlay {
+                                    Image(systemName: "music.note")
+                                        .font(.system(size: 40))
+                                        .foregroundStyle(secondaryColor)
+                                }
+                        }
 
-                    if isHovering {
-                        pinButton
+                        // Visualizer — bars illuminate the artwork
+                        AudioVisualizerView(
+                            bands: audio.bands,
+                            artwork: track.artwork,
+                            height: artGeo.size.width
+                        )
+
+                        // Controls + pin buttons — top corners
+                        if isHovering {
+                            VStack {
+                                HStack {
+                                    controlsButton
+                                    Spacer()
+                                    pinButton
+                                }
+                                Spacer()
+                            }
+                        }
                     }
                 }
+                .aspectRatio(1, contentMode: .fit)
+                .clipped()
+            } else {
+                // Compact: small visualizer strip
+                AudioVisualizerView(
+                    bands: audio.bands,
+                    artwork: track.artwork,
+                    height: 36
+                )
+                .padding(.horizontal, 8)
+                .padding(.top, 8)
             }
-
-            // Audio visualizer — artwork masked by frequency bars
-            AudioVisualizerView(
-                bands: audio.bands,
-                artwork: track.artwork
-            )
-            .padding(.horizontal, compact ? 8 : 12)
-            .padding(.top, compact ? 8 : 6)
 
             // Track info + controls
             VStack(spacing: 2) {
@@ -173,6 +217,21 @@ struct ContentView: View {
             .padding(.bottom, compact ? 10 : 16)
             .padding(.horizontal, 16)
         }
+    }
+
+    private var controlsButton: some View {
+        Button(action: { ControlsPanelManager.shared.toggle() }) {
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 10))
+                .foregroundStyle(.white.opacity(0.8))
+                .padding(6)
+                .background(.black.opacity(0.4))
+                .cornerRadius(6)
+        }
+        .buttonStyle(.plain)
+        .help("Visualizer controls")
+        .padding(8)
+        .transition(.opacity)
     }
 
     private var pinButton: some View {

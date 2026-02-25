@@ -9,7 +9,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "MusicController",
-            path: "Sources/MusicController"
+            path: "Sources/MusicController",
+            resources: [
+                .process("Resources")
+            ]
         )
     ]
 )

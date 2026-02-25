@@ -179,17 +179,17 @@ class AudioAnalyzer: ObservableObject {
                 samples[i] = floatPtr[i * channelCount]
             }
 
-            let newBands = Self.fftBands(from: samples, peak: &self.recentPeak)
+            let boost = VisualizerSettings.shared.highFreqBoost
+            let newBands = Self.fftBands(from: samples, peak: &self.recentPeak, highFreqBoost: boost)
 
+            let decay = VisualizerSettings.shared.decaySpeed
             DispatchQueue.main.async {
                 for i in 0..<self.bands.count {
                     let target = i < newBands.count ? newBands[i] : 0
                     if target > self.bands[i] {
-                        // Instant attack — snap to peaks
                         self.bands[i] = target
                     } else {
-                        // Quick decay — keeps things lively
-                        self.bands[i] = self.bands[i] * 0.7 + target * 0.3
+                        self.bands[i] = self.bands[i] * decay + target * (1 - decay)
                     }
                 }
             }
@@ -253,7 +253,7 @@ class AudioAnalyzer: ObservableObject {
 
     // MARK: - FFT
 
-    static func fftBands(from samples: [Float], peak: inout Float) -> [Float] {
+    static func fftBands(from samples: [Float], peak: inout Float, highFreqBoost: Float = 2.5) -> [Float] {
         let bandCount = 64
         let n = 4096
         let halfN = n / 2
@@ -338,7 +338,7 @@ class AudioAnalyzer: ObservableObject {
             var val = bands[i] * normFactor
             // Boost higher bands — high frequencies have less energy naturally
             let t = Float(i) / Float(bandCount - 1)
-            let boost: Float = 1.0 + t * 2.5  // 1x at low end, 3.5x at high end
+            let boost: Float = 1.0 + t * highFreqBoost
             val *= boost
             // Power curve to boost detail
             val = pow(val, 0.7)

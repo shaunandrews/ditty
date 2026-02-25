@@ -74,6 +74,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
 
+        let viewMenuItem = NSMenuItem()
+        let viewMenu = NSMenu(title: "View")
+        let controlsItem = NSMenuItem(
+            title: "Visualizer Controls",
+            action: #selector(toggleControls),
+            keyEquivalent: ","
+        )
+        viewMenu.addItem(controlsItem)
+        viewMenuItem.submenu = viewMenu
+        mainMenu.addItem(viewMenuItem)
+
         NSApplication.shared.mainMenu = mainMenu
+    }
+
+    @objc private func toggleControls() {
+        ControlsPanelManager.shared.toggle()
     }
 }
