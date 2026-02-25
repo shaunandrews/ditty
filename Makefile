@@ -10,9 +10,9 @@ build:
 
 install: build
 	mkdir -p "$(BUNDLE)/MacOS" "$(BUNDLE)/Resources"
-	cp $(BUILD_DIR)/MusicController "$(BUNDLE)/MacOS/"
+	cp $(BUILD_DIR)/Ditty "$(BUNDLE)/MacOS/"
 	cp Info.plist "$(BUNDLE)/"
-	xcrun actool Sources/MusicController/Resources/Assets.xcassets \
+	xcrun actool Sources/Ditty/Resources/Assets.xcassets \
 		--compile "$(BUNDLE)/Resources" \
 		--platform macosx \
 		--minimum-deployment-target 14.0 \

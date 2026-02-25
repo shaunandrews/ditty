@@ -27,10 +27,10 @@ Code signing uses a local `DittyDev` self-signed certificate. Create it once via
 
 ## Key Files
 
-- `Sources/MusicController/MusicBridge.swift` — All AppleScript interaction. Uses `||`-delimited string responses parsed into `TrackInfo`. Artwork fetched separately as raw data.
-- `Sources/MusicController/ContentView.swift` — The player UI. Owns the `MusicBridge` instance as `@StateObject`. Handles float/pin toggle.
-- `Sources/MusicController/AudioAnalyzer.swift` — Core Audio Process Tap for real-time audio visualization. Taps Music.app's audio output directly (no microphone). Uses `CATapDescription` + tap-only aggregate device (no sub-devices) + IO proc callback. Reads format from `kAudioTapPropertyFormat`. FFT via vDSP with log-frequency band mapping, adaptive normalization, and high-frequency boost.
-- `Sources/MusicController/App.swift` — App entry point and `AppDelegate` for floating window setup.
+- `Sources/Ditty/MusicBridge.swift` — All AppleScript interaction. Uses `||`-delimited string responses parsed into `TrackInfo`. Artwork fetched separately as raw data.
+- `Sources/Ditty/ContentView.swift` — The player UI. Owns the `MusicBridge` instance as `@StateObject`. Handles float/pin toggle.
+- `Sources/Ditty/AudioAnalyzer.swift` — Core Audio Process Tap for real-time audio visualization. Taps Music.app's audio output directly (no microphone). Uses `CATapDescription` + tap-only aggregate device (no sub-devices) + IO proc callback. Reads format from `kAudioTapPropertyFormat`. FFT via vDSP with log-frequency band mapping, adaptive normalization, and high-frequency boost.
+- `Sources/Ditty/App.swift` — App entry point and `AppDelegate` for floating window setup.
 
 ## Scope
 

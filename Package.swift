@@ -2,14 +2,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "MusicController",
+    name: "Ditty",
     platforms: [
         .macOS(.v14)
     ],
     targets: [
         .executableTarget(
-            name: "MusicController",
-            path: "Sources/MusicController",
+            name: "Ditty",
+            path: "Sources/Ditty",
             resources: [
                 .process("Resources")
             ]

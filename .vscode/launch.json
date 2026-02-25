@@ -4,21 +4,21 @@
             "type": "swift",
             "request": "launch",
             "args": [],
-            "cwd": "${workspaceFolder:music-controller}",
-            "name": "Debug MusicController",
-            "target": "MusicController",
+            "cwd": "${workspaceFolder:ditty}",
+            "name": "Debug Ditty",
+            "target": "Ditty",
             "configuration": "debug",
-            "preLaunchTask": "swift: Build Debug MusicController"
+            "preLaunchTask": "swift: Build Debug Ditty"
         },
         {
             "type": "swift",
             "request": "launch",
             "args": [],
-            "cwd": "${workspaceFolder:music-controller}",
-            "name": "Release MusicController",
-            "target": "MusicController",
+            "cwd": "${workspaceFolder:ditty}",
+            "name": "Release Ditty",
+            "target": "Ditty",
             "configuration": "release",
-            "preLaunchTask": "swift: Build Release MusicController"
+            "preLaunchTask": "swift: Build Release Ditty"
         }
     ]
 }
